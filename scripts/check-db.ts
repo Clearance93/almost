@@ -1,53 +1,49 @@
 /**
- * Verifies the VectorsDB setup and prints a live similarity search.
+ * Verifies the TablesDB setup and prints a stored neighbour graph.
  *
  *   npm run check-db
  */
-import { EmbeddingModel, Query } from "node-appwrite";
-import { describeError, getEmbeddings, getVectorsDb, ids } from "../lib/appwrite";
+import { Query } from "node-appwrite";
+import { TABLES, describeError, getTablesDb, ids } from "../lib/appwrite";
 import { loadLocalEnv } from "./_env";
 
 loadLocalEnv();
 
-type DistanceDocument = { $id: string; $distance?: number; metadata?: { word?: string } };
+type Neighbour = { id: string; word: string; deck: string; distance: number };
 
 async function main() {
-  const vdb = getVectorsDb();
-  const embeddings = getEmbeddings();
+  const tables = getTablesDb();
 
-  const collection = await vdb.getCollection({
-    databaseId: ids.database,
-    collectionId: ids.collection,
-  });
-  console.log(`Collection  ${collection.name} · dimension ${collection.dimension}`);
-
-  const count = await vdb.listDocuments({
-    databaseId: ids.database,
-    collectionId: ids.collection,
-    queries: [Query.limit(1)],
-  });
-  console.log(`Documents   ${count.total}`);
-
-  const generated = await embeddings.createTextEmbeddings({
-    texts: ["lantern"],
-    model: EmbeddingModel.Nomicembedtext,
-  });
-  const vector = generated.embeddings[0]?.embedding ?? [];
-  console.log(`Embedding   ${vector.length}d · ${vector.slice(0, 3).map((n) => n.toFixed(3)).join(", ")}…`);
-
-  const results = (await vdb.listDocuments({
-    databaseId: ids.database,
-    collectionId: ids.collection,
-    queries: [Query.vectorCosine("embeddings", vector), Query.limit(8)],
-  })) as unknown as { documents: DistanceDocument[] };
-
-  console.log("\nNearest words to “lantern”:");
-  for (const doc of results.documents) {
-    const distance = doc.$distance ?? Number.NaN;
-    console.log(`  ${(doc.metadata?.word ?? doc.$id).padEnd(14)} ${distance.toFixed(4)}`);
+  for (const tableId of [TABLES.words, TABLES.rounds, TABLES.scores]) {
+    const list = await tables.listRows({
+      databaseId: ids.database,
+      tableId,
+      queries: [Query.limit(1)],
+    });
+    console.log(`${tableId.padEnd(8)} ${list.total} rows`);
   }
 
-  console.log("\nOK — VectorsDB is reachable and ranking by cosine distance.");
+  const row = (await tables.getRow({
+    databaseId: ids.database,
+    tableId: TABLES.words,
+    rowId: "lantern",
+  })) as unknown as {
+    word: string;
+    deck: string;
+    embedding: string;
+    neighbours: string;
+  };
+
+  const embedding = JSON.parse(row.embedding) as number[];
+  const neighbours = JSON.parse(row.neighbours) as Neighbour[];
+
+  console.log(`\n"${row.word}" (${row.deck}) · ${embedding.length}d embedding`);
+  console.log("Stored neighbours:");
+  for (const n of neighbours.slice(0, 8)) {
+    console.log(`  ${n.word.padEnd(14)} ${n.distance.toFixed(4)}  [${n.deck}]`);
+  }
+
+  console.log("\nOK — TablesDB is reachable and the neighbour graph is seeded.");
 }
 
 main().catch((error) => {

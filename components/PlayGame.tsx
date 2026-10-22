@@ -5,8 +5,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MeaningMap, type MapPoint } from "@/components/MeaningMap";
 import { decks } from "@/lib/deck";
-import { SPICE_BANDS, scoreRound } from "@/lib/game";
-import type { RevealPayload, RoundResponse, RoundResult, Spice } from "@/lib/types";
+import { SPICE_BANDS } from "@/lib/game";
+import type {
+  LeaderboardEntry,
+  RevealPayload,
+  RoundResponse,
+  RoundResult,
+  Spice,
+} from "@/lib/types";
 
 type Stage = "setup" | "dealing" | "clues" | "voting" | "reveal" | "final";
 
@@ -31,7 +37,8 @@ export function PlayGame() {
 
   const [round, setRound] = useState<RoundResponse | null>(null);
   const [roundNumber, setRoundNumber] = useState(1);
-  const [scores, setScores] = useState<Record<string, number>>({});
+  const [gameId, setGameId] = useState<string | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const [cardIndex, setCardIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -59,7 +66,7 @@ export function PlayGame() {
   }, [stage, roundNumber]);
 
   const startRound = useCallback(
-    async (overrideNames?: string[]) => {
+    async (overrideNames?: string[], roundIndex = 0) => {
       const playerNames = overrideNames ?? names.map((n) => n.trim());
       setPending(true);
       setError(null);
@@ -67,23 +74,25 @@ export function PlayGame() {
         const response = await fetch("/api/round", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ deck, spice, names: playerNames }),
+          body: JSON.stringify({
+            deck,
+            spice,
+            names: playerNames,
+            gameId: gameId ?? undefined,
+            roundIndex,
+          }),
         });
         const data = (await response.json()) as RoundResponse & { error?: string };
         if (!response.ok) throw new Error(data.error ?? "The word map did not answer");
 
         setRound(data);
+        setGameId(data.gameId);
         setCardIndex(0);
         setRevealed(false);
         setHasSeen(false);
         setSuspectId(null);
         setReveal(null);
         setOutcome(null);
-        setScores((current) => {
-          const next = { ...current };
-          for (const player of data.players) if (!(player.name in next)) next[player.name] = 0;
-          return next;
-        });
         setStage("dealing");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Could not start the round");
@@ -91,7 +100,7 @@ export function PlayGame() {
         setPending(false);
       }
     },
-    [deck, names, spice],
+    [deck, gameId, names, spice],
   );
 
   async function openReveal() {
@@ -99,24 +108,22 @@ export function PlayGame() {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/reveal", {
+      const response = await fetch("/api/round/finish", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sealed: round.sealed }),
+        body: JSON.stringify({ sealed: round.sealed, accusedPlayerId: suspectId }),
       });
-      const data = (await response.json()) as RevealPayload & { error?: string };
+      const data = (await response.json()) as {
+        reveal: RevealPayload;
+        result: RoundResult;
+        leaderboard: LeaderboardEntry[];
+        error?: string;
+      };
       if (!response.ok) throw new Error(data.error ?? "The reveal could not be opened");
 
-      const result = scoreRound(data.players, { eliminatedId: suspectId, tie: false });
-      setReveal(data);
-      setOutcome(result);
-      setScores((current) => {
-        const next = { ...current };
-        for (const player of data.players) {
-          next[player.name] = (next[player.name] ?? 0) + (result.points[player.id] ?? 0);
-        }
-        return next;
-      });
+      setReveal(data.reveal);
+      setOutcome(data.result);
+      setLeaderboard(data.leaderboard);
       setStage("reveal");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not open the reveal");
@@ -131,14 +138,15 @@ export function PlayGame() {
       return;
     }
     setRoundNumber((n) => n + 1);
-    void startRound(names.map((n) => n.trim()));
+    void startRound(names.map((n) => n.trim()), roundNumber);
   }
 
   function reset() {
     setStage("setup");
     setRound(null);
     setRoundNumber(1);
-    setScores({});
+    setGameId(null);
+    setLeaderboard([]);
     setReveal(null);
     setOutcome(null);
     setSuspectId(null);
@@ -210,7 +218,7 @@ export function PlayGame() {
                 setSpice={setSpice}
                 canStart={canStart}
                 pending={pending}
-                onStart={() => void startRound()}
+                onStart={() => void startRound(undefined, 0)}
               />
             ) : null}
 
@@ -266,7 +274,7 @@ export function PlayGame() {
             ) : null}
 
             {stage === "final" ? (
-              <Final scores={scores} onAgain={reset} />
+              <Final leaderboard={leaderboard} onAgain={reset} />
             ) : null}
           </motion.div>
         </AnimatePresence>
@@ -765,40 +773,65 @@ function Reveal({
   );
 }
 
-function Final({ scores, onAgain }: { scores: Record<string, number>; onAgain: () => void }) {
-  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-  const top = ranked[0]?.[1] ?? 0;
+function Final({
+  leaderboard,
+  onAgain,
+}: {
+  leaderboard: LeaderboardEntry[];
+  onAgain: () => void;
+}) {
+  const ranked = [...leaderboard].sort(
+    (a, b) => b.points - a.points || a.caught - b.caught,
+  );
+  const top = ranked[0]?.points ?? 0;
+  const leaders = ranked.filter((entry) => entry.points === top);
 
   return (
     <div className="pt-8">
       <span className="label">After three rounds</span>
       <h2 className="mt-4 font-serif text-[clamp(2.2rem,5.5vw,3.4rem)] leading-none">
-        {ranked.filter(([, v]) => v === top).length > 1
+        {leaders.length > 1
           ? "A shared crown."
-          : `${ranked[0]?.[0] ?? "Nobody"} reads the table.`}
+          : `${ranked[0]?.player ?? "Nobody"} reads the table.`}
       </h2>
 
       <ol className="mt-10 border-t border-ink/15">
-        {ranked.map(([name, points], index) => (
+        {ranked.map((entry, index) => (
           <li
-            key={name}
+            key={entry.player}
             className="flex items-center justify-between border-b border-ink/10 py-4"
           >
             <span className="flex items-baseline gap-4">
               <span className="font-mono text-[11px] text-ink-soft">
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <span className={`font-serif text-[22px] ${points === top ? "italic" : ""}`}>
-                {name}
+              <span
+                className={`font-serif text-[22px] ${
+                  entry.points === top ? "italic" : ""
+                }`}
+              >
+                {entry.player}
               </span>
             </span>
-            <span className="font-mono text-[13px]">{points} pts</span>
+            <span className="flex items-baseline gap-3">
+              <span className="label">
+                {entry.caught === 0 ? "never caught" : `caught ${entry.caught}×`}
+              </span>
+              <span className="font-mono text-[13px]">{entry.points} pts</span>
+            </span>
           </li>
         ))}
       </ol>
 
+      <p className="mt-4 text-[11px] text-ink-soft">
+        Scores were written to Appwrite TablesDB in a transaction — refresh-safe, device-safe.
+      </p>
+
       <div className="mt-9 flex items-center justify-between gap-4">
-        <Link href="/" className="text-[13px] text-ink-soft underline decoration-ink/25 underline-offset-4 hover:text-ink">
+        <Link
+          href="/"
+          className="text-[13px] text-ink-soft underline decoration-ink/25 underline-offset-4 hover:text-ink"
+        >
           Back to the map
         </Link>
         <button onClick={onAgain} className={primary}>

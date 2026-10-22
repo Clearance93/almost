@@ -7,23 +7,26 @@
 Everyone at the table gets the same secret word — except one player, who gets a word that is
 **almost** the same: the nearest neighbour of the real word in embedding space.
 
-## Why a vector database
+## Why a precomputed meaning graph
 
 Traditional social deduction games ship with a hand-written deck: `cat / dog`, `beach / desert`.
 That deck is finite, uneven, and the difficulty is whatever the author guessed.
 
-In Almost there is no deck. Each word is stored once as a 768-dimension embedding. To build a round:
+Almost has no deck. Each word is stored once in TablesDB with its 768-dimension embedding and its
+40 nearest neighbours, computed at build time. To build a round:
 
-1. Take the secret word's vector.
-2. Ask VectorsDB for its nearest neighbours, ranked by cosine distance.
+1. Pick a secret row from the `words` table.
+2. Read that row's neighbour list.
 3. Keep the neighbours inside a **spice band** (e.g. `0.36 – 0.55`).
 4. Deal one at random as the decoy.
 
-The consequences are the product:
+TablesDB has no vector column, so the graph is built once and stored as data. The consequences are
+the product:
 
 - **Infinite content** — every word in the collection is a potential round.
 - **A real difficulty dial** — move the band and the table gets harder.
 - **An honest reveal** — the exact distance that decided the round is shown to the players.
+- **One database** — words, rounds, and scores all live in TablesDB.
 
 ## Players and roles
 

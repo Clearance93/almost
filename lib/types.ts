@@ -65,6 +65,7 @@ export type RoundResult = RoundTally & {
 /** Shape returned by POST /api/reveal (decrypted from the sealed round token). */
 export type RevealPayload = {
   roundId: string;
+  gameId: string;
   seed: number;
   spice: Spice;
   deck: string;
@@ -78,11 +79,19 @@ export type RevealPayload = {
     candidates: number;
     pool: number;
     band: { min: number; max: number };
+    store: string;
   };
+};
+
+export type LeaderboardEntry = {
+  player: string;
+  points: number;
+  caught: number;
 };
 
 export type RoundResponse = {
   roundId: string;
+  gameId: string;
   deck: string;
   spice: Spice;
   seed: number;

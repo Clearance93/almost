@@ -1,7 +1,13 @@
-import { Client, Embeddings, Permission, Role, VectorsDB } from "node-appwrite";
+import { Client, Embeddings, TablesDB } from "node-appwrite";
 
 export const EMBEDDING_DIMENSION = 768;
 export const EMBEDDING_MODEL_LABEL = "nomic-embed-text";
+
+export const TABLES = {
+  words: "words",
+  rounds: "rounds",
+  scores: "scores",
+} as const;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -25,8 +31,8 @@ export function getClient(): Client {
   return cached;
 }
 
-export function getVectorsDb(): VectorsDB {
-  return new VectorsDB(getClient());
+export function getTablesDb(): TablesDB {
+  return new TablesDB(getClient());
 }
 
 export function getEmbeddings(): Embeddings {
@@ -35,10 +41,7 @@ export function getEmbeddings(): Embeddings {
 
 export const ids = {
   database: process.env.APPWRITE_DATABASE_ID ?? "almost",
-  collection: process.env.APPWRITE_COLLECTION_ID ?? "words",
 };
-
-export const readAny = [Permission.read(Role.any())];
 
 export function isConflict(error: unknown): boolean {
   return (
