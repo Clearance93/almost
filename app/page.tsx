@@ -59,12 +59,12 @@ export default function Home() {
           <a href="#engine" className="label hidden hover:text-ink sm:block">
             The engine
           </a>
-          <a
-            href="#how"
+          <Link
+            href="/play"
             className="rounded-sm bg-ink px-4 py-2 text-[13px] font-medium text-paper transition-colors hover:bg-vermilion"
           >
             Play a round
-          </a>
+          </Link>
         </nav>
       </header>
 
@@ -75,7 +75,7 @@ export default function Home() {
             Appwrite Databases Hackathon · TablesDB
           </p>
 
-          <h1 className="mt-6 font-serif text-[clamp(2.9rem,6.4vw,5.4rem)] leading-[0.94] tracking-[-0.02em]">
+          <h1 className="mt-6 text-balance font-serif text-[clamp(2.9rem,6.4vw,5.4rem)] leading-[0.94] tracking-[-0.02em]">
             One of you has the <em className="text-vermilion">almost</em> right word.
           </h1>
 
@@ -87,13 +87,13 @@ export default function Home() {
           </p>
 
           <div className="mt-9 flex flex-wrap items-center gap-4">
-            <a
-              href="#how"
+            <Link
+              href="/play"
               className="group inline-flex items-center gap-3 rounded-sm bg-ink px-6 py-3.5 text-sm font-medium text-paper transition-colors hover:bg-vermilion"
             >
               Start a round
               <span className="transition-transform group-hover:translate-x-1">→</span>
-            </a>
+            </Link>
             <a
               href="#engine"
               className="text-sm text-ink-soft underline decoration-ink/25 underline-offset-4 transition-colors hover:text-ink"

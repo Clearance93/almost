@@ -21,23 +21,33 @@ const MAX_SHOWN_DISTANCE = 0.9;
 export function MeaningMap({ center, points, size = 520, className }: Props) {
   const cx = size / 2;
   const cy = size / 2;
-  const inner = 54;
-  const outer = size / 2 - 40;
+  const inner = 84;
+  const outer = size / 2 - 44;
 
   const radiusFor = (distance: number) =>
     inner + (Math.min(distance, MAX_SHOWN_DISTANCE) / MAX_SHOWN_DISTANCE) * (outer - inner);
 
-  const spread = 300;
-  const step = points.length > 1 ? spread / (points.length - 1) : 0;
+  const step = points.length > 0 ? 360 / points.length : 0;
 
   const placed = points.map((point, index) => {
-    const angle = (-spread / 2 + step * index - 90) * (Math.PI / 180);
+    const angle = (-90 + step * index) * (Math.PI / 180);
     const r = radiusFor(point.distance);
+    const x = Number((cx + Math.cos(angle) * r).toFixed(2));
+    const y = Number((cy + Math.sin(angle) * r).toFixed(2));
+
+    const anchor: "start" | "middle" | "end" =
+      x < cx - 8 ? "end" : x > cx + 8 ? "start" : "middle";
+    const labelX = Number((x + (anchor === "end" ? -9 : anchor === "start" ? 9 : 0)).toFixed(2));
+    const labelY = Number((y + (anchor === "middle" ? (y < cy ? -13 : 17) : 4)).toFixed(2));
+
     return {
       ...point,
-      x: Number((cx + Math.cos(angle) * r).toFixed(2)),
-      y: Number((cy + Math.sin(angle) * r).toFixed(2)),
+      x,
+      y,
       r: Number(r.toFixed(2)),
+      anchor,
+      labelX,
+      labelY,
     };
   });
 
@@ -90,7 +100,7 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
         <circle cx={cx} cy={cy} r={16} fill="none" stroke="var(--color-ink)" strokeOpacity={0.25} />
         <text
           x={cx}
-          y={cy + 52}
+          y={cy + 40}
           textAnchor="middle"
           className="font-serif"
           style={{ fontSize: 30, fill: "var(--color-ink)", fontStyle: "italic" }}
@@ -99,7 +109,7 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
         </text>
         <text
           x={cx}
-          y={cy + 72}
+          y={cy + 58}
           textAnchor="middle"
           style={{
             fontSize: 9,
@@ -128,9 +138,9 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
             fillOpacity={point.tone === "odd" ? 1 : 0.55}
           />
           <text
-            x={point.x}
-            y={point.y - 13}
-            textAnchor="middle"
+            x={point.labelX}
+            y={point.labelY}
+            textAnchor={point.anchor}
             style={{
               fontSize: point.tone === "odd" ? 17 : 13,
               fill:
@@ -146,9 +156,9 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
 
       {odd ? (
         <text
-          x={odd.x}
-          y={odd.y + 30}
-          textAnchor="middle"
+          x={odd.labelX}
+          y={odd.labelY + 14}
+          textAnchor={odd.anchor}
           style={{
             fontSize: 9,
             letterSpacing: "0.14em",
@@ -156,7 +166,7 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
             fontFamily: "var(--font-mono)",
           }}
         >
-          THE ODD WORD · {odd.distance.toFixed(2)}
+          ODD · {odd.distance.toFixed(2)}
         </text>
       ) : null}
 

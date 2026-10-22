@@ -348,7 +348,7 @@ function Setup({
   return (
     <div className="pt-4">
       <p className="label">Set the table</p>
-      <h1 className="mt-4 max-w-xl font-serif text-[clamp(2.2rem,5vw,3.4rem)] leading-[1.02] tracking-tight">
+      <h1 className="mt-4 max-w-[600px] text-balance font-serif text-[clamp(2.2rem,5vw,3.4rem)] leading-[1.02] tracking-tight">
         One of you will get the wrong word.
       </h1>
       <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-ink-soft">

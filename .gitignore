@@ -11,3 +11,6 @@ next-env.d.ts
 Thumbs.db
 research/
 .vercel/
+
+recordings/
+AGENTS.md
