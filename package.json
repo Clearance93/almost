@@ -1,0 +1,31 @@
+{
+  "name": "almost",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A party game of near-miss words, powered by Appwrite VectorsDB.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx scripts/seed.ts",
+    "check-db": "tsx scripts/check-db.ts"
+  },
+  "dependencies": {
+    "motion": "14.6.0",
+    "next": "16.4.2",
+    "node-appwrite": "31.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
