@@ -98,8 +98,18 @@ export function PlayGame() {
     cleanNames.length >= 4 && cleanNames.length === names.length && uniqueNames && !pending;
 
   useEffect(() => {
-    // Warm the Appwrite connection while people are typing names.
-    void fetch("/api/warm", { cache: "no-store" }).catch(() => undefined);
+    // Keep the Appwrite connection hot while the table is open. The first
+    // round pays the cold start; later rounds should not.
+    let cancelled = false;
+    const warm = () => {
+      if (!cancelled) void fetch("/api/warm", { cache: "no-store" }).catch(() => undefined);
+    };
+    warm();
+    const timer = setInterval(warm, 45_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
