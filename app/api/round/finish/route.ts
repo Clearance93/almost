@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { finishRound } from "@/lib/round-store";
+import { friendlyError, isTransient, withRetry } from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,14 +25,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const payload = await finishRound({
-      sealed: parsed.data.sealed,
-      accusedPlayerId: parsed.data.accusedPlayerId,
-    });
+    const payload = await withRetry(
+      () =>
+        finishRound({
+          sealed: parsed.data.sealed,
+          accusedPlayerId: parsed.data.accusedPlayerId,
+        }),
+      4,
+      400,
+    );
     return NextResponse.json(payload, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not score the round";
-    const status = message.includes("already been scored") ? 409 : 500;
+    const message = friendlyError(error, "Could not score the round");
+    const alreadyScored = message.includes("already been scored");
+    const status = alreadyScored ? 409 : isTransient(error) ? 503 : 400;
     console.error("[api/round/finish]", message);
     return NextResponse.json({ error: message }, { status });
   }

@@ -10,7 +10,7 @@ import {
   TOO_CLOSE,
   TOO_FAR,
 } from "./game";
-import { EMBEDDING_MODEL_LABEL, TABLES, getTablesDb, ids } from "./appwrite";
+import { EMBEDDING_MODEL_LABEL, TABLES, getTablesDb, ids, withRetry } from "./appwrite";
 import { createGameRows } from "./schema";
 import { seal, open } from "./seal";
 import type {
@@ -43,6 +43,7 @@ type ScoreRow = {
 
 type RoundRow = {
   $id: string;
+  accused?: string | null;
   outcome?: string | null;
 };
 
@@ -55,11 +56,13 @@ async function pickSecret(deckId: string, rng: () => number): Promise<WordRow> {
   const tables = getTablesDb();
   const filter = deckId === "any" ? [] : [Query.equal("deck", deckId)];
 
-  const count = await tables.listRows({
-    databaseId: ids.database,
-    tableId: TABLES.words,
-    queries: [...filter, Query.limit(1)],
-  });
+  const count = await withRetry(() =>
+    tables.listRows({
+      databaseId: ids.database,
+      tableId: TABLES.words,
+      queries: [...filter, Query.limit(1)],
+    }),
+  );
 
   if (count.total === 0) {
     throw new Error(
@@ -68,11 +71,13 @@ async function pickSecret(deckId: string, rng: () => number): Promise<WordRow> {
   }
 
   const offset = Math.floor(rng() * count.total);
-  const page = await tables.listRows({
-    databaseId: ids.database,
-    tableId: TABLES.words,
-    queries: [...filter, Query.offset(offset), Query.limit(1)],
-  });
+  const page = await withRetry(() =>
+    tables.listRows({
+      databaseId: ids.database,
+      tableId: TABLES.words,
+      queries: [...filter, Query.offset(offset), Query.limit(1)],
+    }),
+  );
 
   const row = page.rows[0] as unknown as WordRow | undefined;
   if (!row) throw new Error("Could not read a secret word from TablesDB");
@@ -99,12 +104,19 @@ export async function buildRound(input: {
   const rng = createRng(seed);
 
   let gameId = input.gameId;
+  let secretRow: WordRow;
+
   if (!gameId) {
     gameId = crypto.randomUUID();
-    await createGameRows(gameId, input.names);
+    // Deal the first round's write and the word lookup at the same time.
+    const [, row] = await Promise.all([
+      createGameRows(gameId, input.names),
+      pickSecret(input.deck, rng),
+    ]);
+    secretRow = row;
+  } else {
+    secretRow = await pickSecret(input.deck, rng);
   }
-
-  const secretRow = await pickSecret(input.deck, rng);
   const candidates = parseNeighbours(secretRow.neighbours);
   const decoy = pickDecoy(candidates, input.spice, rng, secretRow.$id);
   if (!decoy) throw new Error("No usable neighbour for that word — widen the deck.");
@@ -120,21 +132,23 @@ export async function buildRound(input: {
   const roundId = crypto.randomUUID();
   const distance = decoy.distance;
 
-  await tables.createRow({
-    databaseId: ids.database,
-    tableId: TABLES.rounds,
-    rowId: roundId,
-    data: {
-      gameId,
-      roundIndex: input.roundIndex,
-      deck: input.deck,
-      spice: input.spice,
-      secret: secretRow.word,
-      decoy: decoy.word,
-      distance,
-      createdAt: new Date().toISOString(),
-    },
-  });
+  await withRetry(() =>
+    tables.upsertRow({
+      databaseId: ids.database,
+      tableId: TABLES.rounds,
+      rowId: roundId,
+      data: {
+        gameId,
+        roundIndex: input.roundIndex,
+        deck: input.deck,
+        spice: input.spice,
+        secret: secretRow.word,
+        decoy: decoy.word,
+        distance,
+        createdAt: new Date().toISOString(),
+      },
+    }),
+  );
 
   const reveal: RevealPayload = {
     roundId,
@@ -178,16 +192,18 @@ export async function buildRound(input: {
 }
 
 export async function listScores(gameId: string): Promise<LeaderboardEntry[]> {
-  const rows = await getTablesDb().listRows({
-    databaseId: ids.database,
-    tableId: TABLES.scores,
-    queries: [
-      Query.equal("gameId", gameId),
-      Query.orderDesc("points"),
-      Query.orderAsc("caught"),
-      Query.limit(20),
-    ],
-  });
+  const rows = await withRetry(() =>
+    getTablesDb().listRows({
+      databaseId: ids.database,
+      tableId: TABLES.scores,
+      queries: [
+        Query.equal("gameId", gameId),
+        Query.orderDesc("points"),
+        Query.orderAsc("caught"),
+        Query.limit(20),
+      ],
+    }),
+  );
 
   return (rows.rows as unknown as ScoreRow[]).map((row) => ({
     player: row.player,
@@ -200,6 +216,9 @@ export async function listScores(gameId: string): Promise<LeaderboardEntry[]> {
  * Scores a finished round in one transaction: the round row and every player's
  * counter either all land or none do. Atomic increments mean two devices can
  * never lose a point to a race.
+ *
+ * Retry-safe: if the commit worked but the response was lost, calling again
+ * with the same accusation returns the same result instead of scoring twice.
  */
 export async function finishRound(input: {
   sealed: string;
@@ -211,68 +230,80 @@ export async function finishRound(input: {
   const accused = reveal.players.find((p) => p.id === input.accusedPlayerId);
   if (!accused) throw new Error("That player is not part of this round");
 
-  const existing = (await tables.getRow({
-    databaseId: ids.database,
-    tableId: TABLES.rounds,
-    rowId: reveal.roundId,
-  })) as unknown as RoundRow;
-
-  if (existing.outcome) {
-    throw new Error("This round has already been scored");
-  }
+  const existing = (await withRetry(() =>
+    tables.getRow({
+      databaseId: ids.database,
+      tableId: TABLES.rounds,
+      rowId: reveal.roundId,
+    }),
+  )) as unknown as RoundRow;
 
   const result = scoreRound(reveal.players, {
     eliminatedId: input.accusedPlayerId,
     tie: false,
   });
 
-  const scoreRows = await tables.listRows({
-    databaseId: ids.database,
-    tableId: TABLES.scores,
-    queries: [Query.equal("gameId", reveal.gameId), Query.limit(20)],
-  });
+  if (existing.outcome) {
+    if (existing.accused === accused.name) {
+      return { reveal, result, leaderboard: await listScores(reveal.gameId) };
+    }
+    throw new Error("This round has already been scored by a different vote");
+  }
+
+  const scoreRows = await withRetry(() =>
+    tables.listRows({
+      databaseId: ids.database,
+      tableId: TABLES.scores,
+      queries: [Query.equal("gameId", reveal.gameId), Query.limit(20)],
+    }),
+  );
   const scoreRowByName = new Map(
     (scoreRows.rows as unknown as ScoreRow[]).map((row) => [row.player, row.$id]),
   );
 
-  const transaction = await tables.createTransaction();
-  try {
-    await tables.updateRow({
+  const transaction = await withRetry(() => tables.createTransaction());
+
+  const operations: Record<string, unknown>[] = [
+    {
+      action: "update",
       databaseId: ids.database,
       tableId: TABLES.rounds,
       rowId: reveal.roundId,
       data: { accused: accused.name, outcome: result.winners },
-      transactionId: transaction.$id,
-    });
+    },
+  ];
 
-    for (const player of reveal.players) {
-      const rowId = scoreRowByName.get(player.name);
-      if (!rowId) continue;
+  for (const player of reveal.players) {
+    const rowId = scoreRowByName.get(player.name);
+    if (!rowId) continue;
 
-      const points = result.points[player.id] ?? 0;
-      if (points > 0) {
-        await tables.incrementRowColumn({
-          databaseId: ids.database,
-          tableId: TABLES.scores,
-          rowId,
-          column: "points",
-          value: points,
-          transactionId: transaction.$id,
-        });
-      }
-
-      if (result.caughtIds.includes(player.id)) {
-        await tables.incrementRowColumn({
-          databaseId: ids.database,
-          tableId: TABLES.scores,
-          rowId,
-          column: "caught",
-          value: 1,
-          transactionId: transaction.$id,
-        });
-      }
+    const points = result.points[player.id] ?? 0;
+    if (points > 0) {
+      operations.push({
+        action: "increment",
+        databaseId: ids.database,
+        tableId: TABLES.scores,
+        rowId,
+        data: { column: "points", value: points },
+      });
     }
 
+    if (result.caughtIds.includes(player.id)) {
+      operations.push({
+        action: "increment",
+        databaseId: ids.database,
+        tableId: TABLES.scores,
+        rowId,
+        data: { column: "caught", value: 1 },
+      });
+    }
+  }
+
+  try {
+    await tables.createOperations({
+      transactionId: transaction.$id,
+      operations: operations as never,
+    });
     await tables.updateTransaction({ transactionId: transaction.$id, commit: true });
   } catch (error) {
     await tables

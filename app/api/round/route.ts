@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { validatePlayerNames } from "@/lib/game";
 import { buildRound } from "@/lib/round-store";
+import { friendlyError, isTransient, withRetry } from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,19 +34,25 @@ export async function POST(request: Request) {
 
   try {
     const names = validatePlayerNames(parsed.data.names);
-    const round = await buildRound({
-      deck: parsed.data.deck,
-      spice: parsed.data.spice,
-      names,
-      gameId: parsed.data.gameId,
-      roundIndex: parsed.data.roundIndex,
-      seed: parsed.data.seed,
-    });
+    const round = await withRetry(
+      () =>
+        buildRound({
+          deck: parsed.data.deck,
+          spice: parsed.data.spice,
+          names,
+          gameId: parsed.data.gameId,
+          roundIndex: parsed.data.roundIndex,
+          seed: parsed.data.seed,
+        }),
+      3,
+      400,
+    );
 
     return NextResponse.json(round, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not build a round";
+    const message = friendlyError(error, "Could not build a round");
+    const status = isTransient(error) ? 503 : 400;
     console.error("[api/round]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status });
   }
 }

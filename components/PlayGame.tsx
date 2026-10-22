@@ -29,6 +29,45 @@ const buttonBase =
 const primary = `${buttonBase} bg-ink px-6 py-3.5 text-paper hover:bg-vermilion`;
 const ghost = `${buttonBase} border border-ink/25 px-5 py-3 text-ink hover:bg-ink/5`;
 
+/**
+ * Small wrapper for the game's two API calls. Appwrite's network can wobble;
+ * a 5xx or a dropped connection is retried twice before we bother the player.
+ */
+async function postJson<T>(url: string, body: unknown, retries = 2): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      continue;
+    }
+
+    const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+    if (response.ok) return data;
+
+    if (response.status >= 500 && attempt < retries) {
+      lastError = new Error(data.error ?? "The table lost its connection");
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      continue;
+    }
+
+    throw new Error(data.error ?? "Something went wrong");
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("The table lost its connection. Try again.");
+}
+
 export function PlayGame() {
   const [stage, setStage] = useState<Stage>("setup");
   const [names, setNames] = useState<string[]>(["", "", "", ""]);
@@ -59,6 +98,11 @@ export function PlayGame() {
     cleanNames.length >= 4 && cleanNames.length === names.length && uniqueNames && !pending;
 
   useEffect(() => {
+    // Warm the Appwrite connection while people are typing names.
+    void fetch("/api/warm", { cache: "no-store" }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (stage !== "clues") return;
     setSeconds(CLUE_SECONDS);
     const id = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000);
@@ -71,19 +115,13 @@ export function PlayGame() {
       setPending(true);
       setError(null);
       try {
-        const response = await fetch("/api/round", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            deck,
-            spice,
-            names: playerNames,
-            gameId: gameId ?? undefined,
-            roundIndex,
-          }),
+        const data = await postJson<RoundResponse>("/api/round", {
+          deck,
+          spice,
+          names: playerNames,
+          gameId: gameId ?? undefined,
+          roundIndex,
         });
-        const data = (await response.json()) as RoundResponse & { error?: string };
-        if (!response.ok) throw new Error(data.error ?? "The word map did not answer");
 
         setRound(data);
         setGameId(data.gameId);
@@ -108,18 +146,11 @@ export function PlayGame() {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/round/finish", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sealed: round.sealed, accusedPlayerId: suspectId }),
-      });
-      const data = (await response.json()) as {
+      const data = await postJson<{
         reveal: RevealPayload;
         result: RoundResult;
         leaderboard: LeaderboardEntry[];
-        error?: string;
-      };
-      if (!response.ok) throw new Error(data.error ?? "The reveal could not be opened");
+      }>("/api/round/finish", { sealed: round.sealed, accusedPlayerId: suspectId });
 
       setReveal(data.reveal);
       setOutcome(data.result);

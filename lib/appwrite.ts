@@ -59,3 +59,45 @@ export function describeError(error: unknown): string {
   }
   return String(error);
 }
+
+/** Network wobbles, rate limits, and Appwrite 5xx are worth retrying. */
+export function isTransient(error: unknown): boolean {
+  const candidate = error as { code?: number; message?: string };
+  if (typeof candidate?.code === "number") {
+    if (candidate.code >= 500 || candidate.code === 429) return true;
+  }
+  const message = (candidate?.message ?? "").toLowerCase();
+  return [
+    "fetch failed",
+    "econnreset",
+    "etimedout",
+    "socket hang up",
+    "network",
+    "enotfound",
+    "timeout",
+  ].some((needle) => message.includes(needle));
+}
+
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  attempts = 3,
+  baseDelayMs = 350,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransient(error) || attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+export function friendlyError(error: unknown, fallback: string): string {
+  if (isTransient(error)) return "The table lost its connection to Appwrite. Try again.";
+  const message = error instanceof Error ? error.message : fallback;
+  return message || fallback;
+}
