@@ -1,4 +1,4 @@
-import { ID } from "node-appwrite";
+﻿import { ID } from "node-appwrite";
 import { TABLES, getTablesDb, ids, isConflict } from "./appwrite";
 
 /**
@@ -11,7 +11,7 @@ import { TABLES, getTablesDb, ids, isConflict } from "./appwrite";
 type Column =
   | { key: string; type: "varchar"; size: number; required: boolean }
   | { key: string; type: "longtext" | "text"; required: boolean }
-  | { key: string; type: "integer" | "float" | "boolean" | "datetime"; required: boolean };
+  | { key: string; type: "integer" | "double" | "boolean" | "datetime"; required: boolean };
 
 type Index = {
   key: string;
@@ -53,7 +53,7 @@ export const ROUNDS_TABLE: TableSpec = {
     { key: "spice", type: "varchar", size: 16, required: true },
     { key: "secret", type: "varchar", size: 64, required: true },
     { key: "decoy", type: "varchar", size: 64, required: true },
-    { key: "distance", type: "float", required: true },
+    { key: "distance", type: "double", required: true },
     { key: "accused", type: "varchar", size: 64, required: false },
     { key: "outcome", type: "varchar", size: 16, required: false },
     { key: "createdAt", type: "datetime", required: true },
@@ -80,6 +80,18 @@ export const ALL_TABLES = [WORDS_TABLE, ROUNDS_TABLE, SCORES_TABLE];
 
 export async function ensureDatabase(): Promise<void> {
   const tables = getTablesDb();
+
+  // Check first: on the Free plan a second `create` returns 403 ("database
+  // limit reached") rather than 409, which would look like a failure.
+  try {
+    await tables.get(ids.database);
+    console.log(`  database "${ids.database}" already exists`);
+    return;
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code !== 404) throw error;
+  }
+
   try {
     await tables.create({ databaseId: ids.database, name: "Almost" });
     console.log(`  created database "${ids.database}"`);

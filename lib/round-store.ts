@@ -2,7 +2,7 @@ import "server-only";
 
 import { ID, Query } from "node-appwrite";
 import {
-  SPICE_BANDS,
+  SPICE_RANKS,
   assignRoles,
   createRng,
   pickDecoy,
@@ -145,6 +145,7 @@ export async function buildRound(input: {
     secret: secretRow.word,
     decoy: decoy.word,
     distance,
+    decoyRank: decoy.rank ?? 1,
     players: players.map((player, index) => ({
       id: player.id,
       name: player.name,
@@ -159,7 +160,7 @@ export async function buildRound(input: {
       model: EMBEDDING_MODEL_LABEL,
       candidates: candidates.length,
       pool: candidates.filter((c) => c.distance > TOO_CLOSE && c.distance < TOO_FAR).length,
-      band: SPICE_BANDS[input.spice],
+      ranks: SPICE_RANKS[input.spice],
       store: "TablesDB · precomputed neighbour graph",
     },
   };

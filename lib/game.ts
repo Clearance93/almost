@@ -9,23 +9,24 @@ import type {
 } from "./types";
 
 /**
- * Cosine *distance* bands (0 = identical meaning, 2 = opposite).
+ * Decoys are drawn by rank, not by an absolute distance band.
  *
- * Calibrated against Appwrite's `nomic-embed-text` embeddings: a pair inside
- * these bands shares a context but is still worth describing out loud.
- * `npm run calibrate` prints real distances so these numbers stay honest.
+ * Appwrite's `nomic-embed-text` compresses distances: most nearest neighbours
+ * land between 0.40 and 0.55, so a fixed band spends half its time on noise.
+ * Rank is stable across words, and still correlates with distance — the reveal
+ * shows both.
  */
-export const SPICE_BANDS: Record<Spice, { min: number; max: number }> = {
-  mild: { min: 0.26, max: 0.42 },
-  medium: { min: 0.36, max: 0.55 },
-  hot: { min: 0.48, max: 0.68 },
+export const SPICE_RANKS: Record<Spice, { from: number; to: number }> = {
+  mild: { from: 0, to: 2 },
+  medium: { from: 1, to: 5 },
+  hot: { from: 4, to: 9 },
 };
 
 /** Below this the two words are effectively synonyms and the round is unfair. */
 export const TOO_CLOSE = 0.14;
 
-/** Above this the decoy is obviously unrelated and the round is trivial. */
-export const TOO_FAR = 0.78;
+/** Above this the decoy is unrelated and the round is a coin flip. */
+export const TOO_FAR = 0.58;
 
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 10;
@@ -62,11 +63,11 @@ export function similarity(distance: number): number {
 }
 
 /**
- * Pick the decoy from a vector-search result page.
+ * Pick the decoy from a word's neighbour list.
  *
- * The database does the semantic work: we ask for the closest words to the
- * secret and keep the ones that sit inside the band for the chosen spice.
- * A wider band means a looser neighbour, which is harder to bluff.
+ * The graph does the semantic work; the spice level decides how deep into the
+ * list we are allowed to go. `rank` is 1-based and included so the reveal can
+ * say "the 3rd closest word in the deck".
  */
 export function pickDecoy(
   candidates: readonly Candidate[],
@@ -74,25 +75,24 @@ export function pickDecoy(
   rng: () => number,
   secretId?: string,
 ): Candidate | null {
-  const band = SPICE_BANDS[spice];
-  const usable = candidates.filter(
-    (c) =>
-      c.id !== secretId &&
-      c.distance > TOO_CLOSE &&
-      c.distance < TOO_FAR &&
-      c.word.trim().length > 1,
-  );
+  const usable = candidates
+    .filter(
+      (c) =>
+        c.id !== secretId &&
+        c.distance > TOO_CLOSE &&
+        c.distance < TOO_FAR &&
+        c.word.trim().length > 1,
+    )
+    .sort((a, b) => a.distance - b.distance);
 
-  const inBand = usable.filter((c) => c.distance >= band.min && c.distance <= band.max);
-  if (inBand.length > 0) {
-    return inBand[Math.floor(rng() * inBand.length)];
-  }
-
-  // Nothing landed in the band: take the closest usable neighbour rather than fail.
   if (usable.length === 0) return null;
-  return [...usable].sort(
-    (a, b) => Math.abs(a.distance - band.min) - Math.abs(b.distance - band.min),
-  )[0];
+
+  const { from, to } = SPICE_RANKS[spice];
+  const window = usable.slice(from, to);
+  const pool = window.length > 0 ? window : usable.slice(0, 1);
+  const chosen = pool[Math.floor(rng() * pool.length)];
+
+  return { ...chosen, rank: usable.findIndex((c) => c.id === chosen.id) + 1 };
 }
 
 export function assignRoles(playerCount: number, rng: () => number): Role[] {

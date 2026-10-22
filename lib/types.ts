@@ -31,6 +31,8 @@ export type Candidate = {
   word: string;
   distance: number;
   deck?: DeckId;
+  /** 1-based position in the secret's neighbour list, when chosen as a decoy. */
+  rank?: number;
 };
 
 /** The two words a round is built from. */
@@ -72,13 +74,14 @@ export type RevealPayload = {
   secret: string;
   decoy: string;
   distance: number;
+  decoyRank: number;
   players: { id: string; name: string; role: Role; word: string }[];
   neighbours: { word: string; distance: number }[];
   engine: {
     model: string;
     candidates: number;
     pool: number;
-    band: { min: number; max: number };
+    ranks: { from: number; to: number };
     store: string;
   };
 };

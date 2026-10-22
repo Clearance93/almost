@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { MeaningMap } from "@/components/MeaningMap";
-import { SPICE_BANDS } from "@/lib/game";
+import { SPICE_RANKS } from "@/lib/game";
 
 const samplePoints = [
   { label: "candle", distance: 0.21 },
@@ -166,11 +166,12 @@ export default function Home() {
               Each word is stored once in Appwrite TablesDB with its 768-dimension embedding and
               its 40 nearest neighbours, computed at build time with Appwrite&rsquo;s embedding
               model. To deal a round, the server picks a row at random, reads its neighbour list,
-              and keeps the words inside the chosen distance band.
+              and draws a decoy from the top of it.
             </p>
             <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-              Rounds and scores land in the same database. Scoring is a transaction with atomic
-              increments, so a round can never half-count — even when two phones tap at once.
+              Spice decides how deep into that list the game is allowed to go. Rounds and scores
+              land in the same database — scoring is a transaction with atomic increments, so a
+              round can never half-count.
             </p>
 
             <pre className="mt-8 overflow-x-auto rounded-sm border border-ink/15 bg-ink px-5 py-4 text-[12px] leading-relaxed text-paper/85">
@@ -178,9 +179,9 @@ export default function Home() {
 Query.equal("deck", deck)
 Query.offset(random)
 
-// 2. keep the neighbours inside the band
-const decoy = row.neighbours.find(n =>
-  n.distance > 0.36 && n.distance < 0.55)
+// 2. draw a decoy from its neighbour list
+const pool = row.neighbours.slice(rankFrom, rankTo)
+const decoy = pool[randomIndex]
 
 // 3. score the round atomically
 incrementRowColumn({ column: "points", value: 1 })`}</code>
@@ -190,33 +191,33 @@ incrementRowColumn({ column: "points", value: 1 })`}</code>
           <div className="space-y-5">
             {(
               [
-                ["Mild", "mild", "Easy to bluff. Good for a first round."],
-                ["Medium", "medium", "The table starts to disagree."],
-                ["Hot", "hot", "Barely related. Good luck."],
+                ["Mild", "mild", "Nearest neighbours. The odd player blends right in."],
+                ["Medium", "medium", "A step or two out. The table starts to argue."],
+                ["Hot", "hot", "Deep in the graph. Every clue feels slightly wrong."],
               ] as const
             ).map(([name, key, note]) => {
-              const band = SPICE_BANDS[key];
-              const left = (band.min / 0.9) * 100;
-              const width = ((band.max - band.min) / 0.9) * 100;
+              const rank = SPICE_RANKS[key];
               return (
                 <div key={key} className="rounded-sm border border-ink/15 bg-paper-2/50 p-5">
                   <div className="flex items-baseline justify-between">
                     <h3 className="font-serif text-xl">{name}</h3>
                     <span className="font-mono text-[11px] text-ink-soft">
-                      {band.min.toFixed(2)} – {band.max.toFixed(2)}
+                      {rank.from === 0 ? "#1" : `#${rank.from + 1}–#${rank.to}`}
                     </span>
                   </div>
-                  <div className="relative mt-4 h-9 w-full overflow-hidden rounded-sm bg-ink/5">
-                    <div className="absolute inset-y-0 left-0 w-[16%] bg-ink/10" />
-                    <div className="absolute inset-y-0 right-0 w-[18%] bg-ink/10" />
-                    <div
-                      className="absolute inset-y-1 rounded-[2px] bg-vermilion"
-                      style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    />
+                  <div className="mt-4 flex gap-1" aria-hidden>
+                    {Array.from({ length: 10 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className={`h-7 flex-1 rounded-[2px] ${
+                          index >= rank.from && index < rank.to ? "bg-vermilion" : "bg-ink/10"
+                        }`}
+                      />
+                    ))}
                   </div>
                   <div className="mt-2 flex justify-between">
-                    <span className="label">same word</span>
-                    <span className="label">unrelated</span>
+                    <span className="label">closest</span>
+                    <span className="label">10th neighbour</span>
                   </div>
                   <p className="mt-3 text-[14px] text-ink-soft">{note}</p>
                 </div>

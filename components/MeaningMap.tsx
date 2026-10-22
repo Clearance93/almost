@@ -35,9 +35,9 @@ export function MeaningMap({ center, points, size = 520, className }: Props) {
     const r = radiusFor(point.distance);
     return {
       ...point,
-      x: cx + Math.cos(angle) * r,
-      y: cy + Math.sin(angle) * r,
-      r,
+      x: Number((cx + Math.cos(angle) * r).toFixed(2)),
+      y: Number((cy + Math.sin(angle) * r).toFixed(2)),
+      r: Number(r.toFixed(2)),
     };
   });
 

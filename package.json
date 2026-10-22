@@ -9,6 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "calibrate": "tsx scripts/calibrate.ts",
     "check-db": "tsx scripts/check-db.ts"
   },
   "dependencies": {

@@ -1,29 +1,32 @@
 /**
- * Inspects the stored neighbour graph and checks the spice bands still make sense.
+ * Inspects the stored neighbour graph and checks the spice windows still make sense.
  *
  *   npm run calibrate
  *   npm run calibrate -- coffee
  *   npm run calibrate -- lantern lighthouse
  */
 import { Query } from "node-appwrite";
-import { SPICE_BANDS, TOO_CLOSE, TOO_FAR } from "../lib/game";
+import { SPICE_RANKS, TOO_CLOSE, TOO_FAR } from "../lib/game";
 import { TABLES, describeError, getTablesDb, ids } from "../lib/appwrite";
 import { loadLocalEnv } from "./_env";
 
 loadLocalEnv();
 
-const DEFAULT_SAMPLE = ["lantern", "coffee", "otter", "airport", "violin", "nostalgia"];
+const DEFAULT_SAMPLE = ["lantern", "espresso", "otter", "airport", "violin", "nostalgia"];
 
 type Neighbour = { id: string; word: string; deck: string; distance: number };
 type WordRow = { $id: string; word: string; deck: string; embedding: string; neighbours: string };
 
 async function getWord(rowId: string): Promise<WordRow> {
-  const row = (await getTablesDb().getRow({
+  return (await getTablesDb().getRow({
     databaseId: ids.database,
     tableId: TABLES.words,
     rowId,
   })) as unknown as WordRow;
-  return row;
+}
+
+function usable(list: Neighbour[]): Neighbour[] {
+  return list.filter((n) => n.distance > TOO_CLOSE && n.distance < TOO_FAR);
 }
 
 function cosineDistance(a: number[], b: number[]): number {
@@ -50,24 +53,26 @@ async function main() {
 
   const words = args.length > 0 ? args : DEFAULT_SAMPLE;
   console.log(
-    `bands: mild ${SPICE_BANDS.mild.min}–${SPICE_BANDS.mild.max} · ` +
-      `medium ${SPICE_BANDS.medium.min}–${SPICE_BANDS.medium.max} · ` +
-      `hot ${SPICE_BANDS.hot.min}–${SPICE_BANDS.hot.max}\n`,
+    `draws: mild #1–#${SPICE_RANKS.mild.to} · medium #${SPICE_RANKS.medium.from + 1}–#${SPICE_RANKS.medium.to} · ` +
+      `hot #${SPICE_RANKS.hot.from + 1}–#${SPICE_RANKS.hot.to} · max distance ${TOO_FAR}\n`,
   );
 
   for (const word of words) {
     const row = await getWord(word);
-    const neighbours = (JSON.parse(row.neighbours) as Neighbour[]).slice(0, 9);
-    console.log(`${row.word}  [${row.deck}]`);
-    for (const n of neighbours) {
-      const usable = n.distance > TOO_CLOSE && n.distance < TOO_FAR;
-      const mark = usable ? (n.distance >= SPICE_BANDS.medium.min ? "◆" : "·") : " ";
-      console.log(`   ${mark} ${n.word.padEnd(16)} ${n.distance.toFixed(3)}`);
+    const list = usable(JSON.parse(row.neighbours) as Neighbour[]).slice(0, 9);
+    console.log(`${row.word}  [${row.deck}]  ${list.length} usable neighbours`);
+    list.forEach((n, index) => {
+      const mark = index < 2 ? "1" : index < 5 ? "2" : "3";
+      console.log(
+        `   ${mark} ${String(index + 1).padStart(2)}. ${n.word.padEnd(16)} ${n.distance.toFixed(3)}  [${n.deck}]`,
+      );
+    });
+    if (list.length < SPICE_RANKS.hot.to) {
+      console.log("   ! thin graph for this word — hot will fall back to the closest");
     }
     console.log("");
   }
 
-  // Coverage: how many words have a healthy pool for each spice level?
   const all: WordRow[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = await getTablesDb().listRows({
@@ -79,16 +84,13 @@ async function main() {
     if (page.rows.length < 100) break;
   }
 
-  console.log(`Coverage across ${all.length} words (at least 3 decoys available):`);
+  console.log(`Coverage across ${all.length} words (window can be filled):`);
   for (const spice of ["mild", "medium", "hot"] as const) {
-    const band = SPICE_BANDS[spice];
-    const count = all.filter((row) => {
-      const pool = (JSON.parse(row.neighbours) as Neighbour[]).filter(
-        (n) => n.distance >= band.min && n.distance <= band.max,
-      );
-      return pool.length >= 3;
-    }).length;
-    console.log(`  ${spice.padEnd(7)} ${count}/${all.length} (${Math.round((count / all.length) * 100)}%)`);
+    const need = SPICE_RANKS[spice].to;
+    const count = all.filter((row) => usable(JSON.parse(row.neighbours)).length >= need).length;
+    console.log(
+      `  ${spice.padEnd(7)} ${count}/${all.length} (${Math.round((count / all.length) * 100)}%)`,
+    );
   }
 }
 

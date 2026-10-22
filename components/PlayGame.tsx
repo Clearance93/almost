@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MeaningMap, type MapPoint } from "@/components/MeaningMap";
 import { decks } from "@/lib/deck";
-import { SPICE_BANDS } from "@/lib/game";
+import { SPICE_RANKS } from "@/lib/game";
 import type {
   LeaderboardEntry,
   RevealPayload,
@@ -19,9 +19,9 @@ type Stage = "setup" | "dealing" | "clues" | "voting" | "reveal" | "final";
 const ROUNDS = 3;
 const CLUE_SECONDS = 60;
 const SPICE_COPY: Record<Spice, string> = {
-  mild: "Close neighbours. Easy to bluff.",
-  medium: "The table starts to disagree.",
-  hot: "Barely related. Good luck.",
+  mild: "Closest neighbours. Easy to bluff.",
+  medium: "A step or two out. The table argues.",
+  hot: "The far end of the graph. Good luck.",
 };
 
 const buttonBase =
@@ -390,7 +390,7 @@ function Setup({
             <h2 className="label">Spice</h2>
             <div className="mt-3 space-y-1.5">
               {(["mild", "medium", "hot"] as const).map((level) => {
-                const band = SPICE_BANDS[level];
+                const rank = SPICE_RANKS[level];
                 return (
                   <button
                     key={level}
@@ -408,7 +408,7 @@ function Setup({
                       <span className="block text-[11px] text-ink-soft">{SPICE_COPY[level]}</span>
                     </span>
                     <span className="font-mono text-[10px] text-ink-soft">
-                      {band.min.toFixed(2)}–{band.max.toFixed(2)}
+                      {rank.from === 0 ? "#1" : `#${rank.from + 1}–#${rank.to}`}
                     </span>
                   </button>
                 );
@@ -759,9 +759,8 @@ function Reveal({
 
         <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-ink/15 pt-6">
           <p className="max-w-sm text-[11px] leading-relaxed text-ink-soft">
-            {reveal.engine.candidates} neighbours searched · {reveal.engine.pool} inside the{" "}
-            {reveal.spice} band ({reveal.engine.band.min.toFixed(2)}–
-            {reveal.engine.band.max.toFixed(2)}) · HNSW cosine
+            {reveal.engine.candidates} neighbours scanned · decoy was #{reveal.decoyRank} ·{" "}
+            {reveal.distance.toFixed(3)} apart · {reveal.engine.model} · TablesDB
           </p>
           <button onClick={onNext} className={primary}>
             {roundNumber >= ROUNDS ? "Final score" : "Next round"}

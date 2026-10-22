@@ -27,7 +27,14 @@ loadLocalEnv();
 const BATCH_SIZE = 25;
 const ROW_CHUNK = 10;
 const NEIGHBOURS = 40;
-const MIN_DISTANCE = 0.02;
+const MIN_DISTANCE = 0.16;
+const MAX_DISTANCE = 0.58;
+/**
+ * `nomic-embed-text` puts unrelated words around 0.5, so beyond this distance
+ * we only trust a neighbour inside the same deck. It keeps `lantern →
+ * lighthouse` (0.34) and drops `espresso → volcano` (0.48).
+ */
+const CROSS_DECK_DISTANCE = 0.42;
 
 type Neighbour = { id: string; word: string; deck: string; distance: number };
 
@@ -45,7 +52,9 @@ function cosineDistance(a: number[], b: number[]): number {
 
 async function main() {
   const reset = process.argv.includes("--reset");
-  const data = JSON.parse(readFileSync("data/words.json", "utf8")) as WordData;
+  const data = JSON.parse(
+    readFileSync("data/words.json", "utf8").replace(/^\uFEFF/, ""),
+  ) as WordData;
   const words = data.words.map((w) => ({ ...w, word: w.word.trim().toLowerCase() }));
 
   const knownDecks = new Set(data.decks.map((d) => d.id));
@@ -87,7 +96,8 @@ async function main() {
     for (let other = 0; other < words.length; other++) {
       if (other === index) continue;
       const distance = cosineDistance(vectors[index], vectors[other]);
-      if (distance <= MIN_DISTANCE) continue;
+      if (distance <= MIN_DISTANCE || distance > MAX_DISTANCE) continue;
+      if (distance > CROSS_DECK_DISTANCE && words[other].deck !== word.deck) continue;
       neighbours.push({
         id: words[other].id,
         word: words[other].word,

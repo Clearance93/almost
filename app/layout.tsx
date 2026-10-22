@@ -25,11 +25,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Almost — the party game of near-miss words",
   description:
-    "One player gets a word that is almost right. A party game where every decoy is the nearest neighbour of the real word in Appwrite VectorsDB.",
+    "One player gets a word that is almost right. A party game where every decoy is the nearest neighbour of the real word, built on Appwrite TablesDB.",
   openGraph: {
     title: "Almost — the party game of near-miss words",
     description:
-      "A social deduction game powered by vector similarity. Built on Appwrite VectorsDB.",
+      "A social deduction game powered by a meaning graph. Built on Appwrite TablesDB.",
     type: "website",
   },
 };

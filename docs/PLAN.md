@@ -32,9 +32,10 @@ reveal shows you exactly how close it was.*
 - [x] Research rules, judging, TablesDB API
 - [x] Repo scaffold, design system, landing page, round engine, word deck
 - [x] Port the data layer from VectorsDB to TablesDB (free plan)
-- [ ] Create project + API key, fill `.env.local`
-- [ ] `npm run seed` — embed the deck, build the neighbour graph, create tables
-- [ ] `npm run calibrate` — tune `SPICE_BANDS` against real distances
+- [x] Create project + API key, fill `.env.local`
+- [x] `npm run seed` — embed the deck, build the neighbour graph, create tables
+- [x] `npm run calibrate` — replace distance bands with rank-based draws
+- [x] End-to-end API test: round → vote → transactional scoring → replay guard
 
 ### M1 — The game (Fri 23 – Sat 24 Oct)
 - [x] `/play` setup: players, deck, spice
@@ -48,7 +49,6 @@ reveal shows you exactly how close it was.*
 - [ ] Round history visible: "your last three rounds" from the `rounds` table
 - [ ] "Closest call" stat + share card (og image)
 - [ ] Deck expansion to 300+ words
-- [ ] Bot-clue hints for stuck tables (optional)
 
 ### M3 — Ship (Tue 27 – Thu 29 Oct)
 - [ ] Deploy to Appwrite Sites
